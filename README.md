@@ -1,12 +1,14 @@
 # Pi-tmaster-Improved
 
-Based on JayTongue/Pi-Tmaster fine work.
+A WiFi BBQ thermometer built on a Raspberry Pi Pico 2W. Based on the fine 
+work of [JayTongue/Pi-Tmaster](https://github.com/JayTongue/Pi-Tmaster)
 
 I wanted to create a BBQ thermometer with a couple requirements:
-1) Used the Weber iGrill temperature probes (thermistors) I already owned
-2) Be able to handle 1 - 4 probes and able to handle them being plugged in / unplugged while running
-3) Connect to my home WiFi network so I could monitor it from my phone anywhere in my house
-4) Be able to show/keep temperature readings through a restart of the system or disconnecting from the network
+
+1) Use the Weber iGrill2 temperature probes (thermistors) I already owned.
+2) Be able to handle 1 to 4 probes, which can be plugged in or unplugged while it is running.
+3) Connect to my home WiFi network so I can monitor it from my phone anywhere in my house.
+4) Keeps temperature readings through a restart of the system or a loss of network connection.
 
 
 
@@ -17,103 +19,188 @@ I wanted to create a BBQ thermometer with a couple requirements:
 
 ### Microcontroller
 
-For this project I used a Raspberry Pi Pico 2w that I already had, but you should be able to run this on a Pico W just as well. This project requires a file
-system on the Pico to store temperature history in. In the Arduino IDE choose a flash size with a file system (Tools > Flash Size) for example: "2MB (Sketch: 
-1MB, FS: 1MB)"
+I used a Raspberry Pi Pico 2W that I already had, but a Pico W should work just as well. The project 
+stores temperature history in a filesystem on the Pico's flash, so in the Arduino IDE choose a flash 
+size that includes a filesystem (Tools > Flash Size), for example "2MB (Sketch: 1MB, FS: 1MB)".
 
-### Thermistors and Converter
+### Thermistors and ADC
 
-The original project used thermocouples, but I wanted to use my probes from my iGrill which are thermistors (100k NTC), not thermocouples. 
-Because these are analog probes and the Pico 2W only has 3 usable ADC pins, we require a separate ADC board. I went with the ADS1115 which is a 4-channel
-16 bit ADC. And because it is an I2C device, it can share the same bus as the OLED which simplifies wiring. If you use the same probes you can probably
-get away with using the Steinhart-Hart coefficients in the code already, but if not you will need to record the resistance in the probes at three different
-temperatures and enter them into [this Thermistor Calculator](https://www.thinksrs.com/downloads/programs/Therm%20Calc/NTCCalibrator/NTCcalculator.htm) and enter
-the values for A, B and C in the code. The library to use this module is Adafruit ADS1X15 library. Each probe sits inside a voltage divider (3.3V, a fixed 
-10k resistor, the probe, ground). The ADS1115 measures the midpoint voltage, the sketch converts it to a resistance, and the Steinhart-Hart equation converts 
-that to degrees F. Readings are averaged to reduce noise. A voltage near 0V or near 3.3V is treated as "no probe connected". 
+The original project used thermocouples. I wanted to use the probes from my iGrill2 which are 100k NTC 
+thermistors. Four probes need four analog inputs, and the Pico 2W exposes only three ADC pins, so I 
+added an external ADC: the ADS1115, a 4-channel, 16-bit part. It is an I2C device, so it shares a bus 
+with the OLED, which keeps the wiring simple. The sketch uses the Adafruit ADS1X15 library (which pulls 
+in Adafruit BusIO as a dependency).
+
+Each probe sits in a voltage divider: 3.3V, a fixed 10k resistor, the probe, then ground. The ADS1115 
+measures the midpoint voltage, the sketch converts it to a resistance, and the Steinhart-Hart equation 
+converts that to degrees Fahrenheit. Readings are averaged to reduce noise. A midpoint voltage near 0V 
+or near 3.3V is treated as "no probe connected".
+
+> **Note:** because the unplugged threshold is based on voltage, probes at extreme temperatures may 
+be reported as disconnected. Usable temperature range as calculated by the Steinhart-hart equation
+should be around -40F to 1100F, however Weber only lists the probes as good for -22F to 572F. 
+
+
+**Probe calibration.** The Steinhart-Hart coefficients in the code are for my iGrill2 probes. The iGrill2
+is out of production, but Weber says these probes as "Compatible with iGrill and Weber Connect Devices" so
+they should work [Weber Meat Probe](https://amer.weber.com/en-us/products/meat-temperature-probe-7211?_pos=1&_sid=5ceb4e196&_ss=r&_su_rec=f_65iD0wtAW_yc1rh1AD1yZGqBn-TVljDFD-bQlwbcIDC6Yyjsa8yeWe64fcuXn-SsyHY9FNvkLSp_uzV0epTr_3fpaQ0kW3KXa8j-AkTtq5AY9CxtbvdPQEyXjL_xajqsObUWw3o_ZspEVRQMxSKpa9E5TuQ2s7nakBPDnQACGmvhpnuRbcUnhIJzpZ99zlALCztuoYIN_bQ5SN8sm09zRX7M3XkQDzLcqJppLwijArE0KaDGJ2-V7941fhsLPBafFlAIJsOj4jo_E2L7eW0JkEaeyhe7558rXUqgvRU1CAKf261_VfxggiB8qyWwDd&_su_rec_id=0b9e74e0-ad31-4166-844d-4f764398ead0-1792163399)
+You can probably find Chinese knock-offs on eBay or Amazon for cheaper though. If you use the Weber probes, 
+you can more than likely use the code without changing the coefficients. If you're not, you'll need to 
+record the each probe's resistance at three different temperatures, enter them into [this thermistor 
+calculator](https://www.thinksrs.com/downloads/programs/Therm%20Calc/NTCCalibrator/NTCcalculator.htm), and 
+put the resulting A, B and C values in the code Settings section in SH_A, SH_B and SH_C variables. The 
+fixed resistors I used are 10k 1% tolerance and their actual value affects accuracy.
 
 ### Screen
-I used the same SH1106 OLED display as the original project. it uses the same I2C connection as the ADS1115 and uses the GyverOLED library. The screen will
-display the Pico's IP Address once it's connected to the WiFi and the temperatures from the 4 screens (or N/A if the probe is disconnected) 
 
-### Power Management
-Again, I went with the same LX-LCBST charging board as the original project. I paired this with a 3000mAh battery I had laying around. 
+I used the same SH1106 OLED display as the original project. It shares the I2C bus with the 
+ADS1115 and uses the GyverOLED library. Once the Pico joins WiFi the screen shows its IP
+address along with the temperatures of the four probes (or N/A for any probe that is
+disconnected).
 
-When powered on I measured a current draw of 80 milliamps, which is just slightly more than the original project's 70 mA. With the 3000 mAh battery that should give
-a theoretical run time of just under 40 hours, but I expect in actual use it will be less than that. 
+### Wiring
+
+| Connection          | Pico pin      | Notes |
+|---------------------|---------------|-------|
+| I2C SDA             | GPIO 4        | Shared by ADS1115 and OLED |
+| I2C SCL             | GPIO 5        | Shared by ADS1115 and OLED |
+| ADS1115 I2C address | n/a           | 0x48 |
+| OLED I2C address    | n/a           | 0x3C |
+| Probes 1-4          | ADS1115 A0-A3 | Each via a 10k divider, see above |
+
+
+### Power
+
+I used the same LX-LCBST charging board as the original project, paired with a 3000mAh battery I had 
+on hand. Between the board and the Pico I put a SPDT sliding switch to turn it on and off, and a 
+1N1001 diode to prevent back-feeding from the Pico to the battery if the Pico is hooked up to USB,
+for updating the firmware for example. 
+
+Measured current draw is 80 mA at the battery, compared with 70 mA for the original project. With a
+3000 mAh battery that gives a theoretical runtime of just under 40 hours. I expect real-world
+run time will be shorter, but I'll have to measure it at some point. 
 
 ### Case
-TBD 
+
+The case is still a work in progess, but I'm designing my own case and plan to 3D print it myself. I
+will add the STL file and link to it here when it's ready.
 
 ------------------------------------
 ## 2. Software
 
-#### Raspberry Pi Pico 2W Code
+#### Pico 2W Code
 
-In keeping with the original project, the ``Pi-tmaster-improved.ino`` sketch is written in Arduino C++. Required external libraries are ``Adafruit ADS1X15`` and
-``GyverOLED`` the following libraries come with the core ``WiFi``, ``WebServer`` and ``LittleFS``.
+As in the original project, the ``Pi-tmaster-improved.ino`` sketch is written in Arduino C++ using
+[Earlhower's RP2040/RP2350 core](https://github.com/earlephilhower/arduino-pico) and selecting "Raspberry
+Pi Pico 2W" as the board. 
 
-### Start up
+External libraries required:
+- `Adafruit ADS1X15`
+- `GyverOLED`
 
-On startup the software connects to the WiFi network you've supplied in the code. Once connected it then sets it's clock using NTP from the internet. Finally
-it starts up a web server that handles requests for the page showing the probe temperatures and the history graph, as well as API requests for the probe data itself.
+These come with the board core: `WiFi`, `WebServer` and `LittleFS`.
+
+Before compiling, set your WiFi SSID and password in `NETWORK_SSID` and `NETWORK_PW` defines in the code.
+Do NOT commit your credentials if you fork this repository.
+
+### Startup
+
+On startup the Pico connects to the WiFi network configured in the code, then sets its clock using 
+NTP. Finally it starts a web server that serves the temperature page and history graph, as well as 
+API requests for the probe data. 
+
+If WiFi is not available on start up, the Pico will stop trying after 20 seconds and continue with
+the rest of setup. The OLED will display "no Wifi" instead of an IP address, and it will attempt to
+reconnect every 10 seconds. During the time the WiFi is not connected the tempatures will still be
+recorded in the memory. 
+ 
+To use it, browse to the IP address shown on the OLED.
 
 ### Web page
 
-The web page code is stored in ``page.h`` and the file must be kept in the same folder as the sketch for it to compile. The whole page is loaded into flash memory
-and does not rely on any CDNs so it will continue to work even if the home network internet is down. The web page shows the current temperatures of any probes connected, as
-well as a live graph that can be selected to show 30 minutes, 2 hours, 6 hours or 24 hours of historical data. The Y axis adjusts based on the highest and lowest reading
-in the specified time range. If the pico can't be reached or restarts a warning will be shown on the page, and any missing data will be back-filled in the graph when it
-becomes available again. The page will poll the Pico for live temperature data every 3 seconds and refreshes the history every 30 seconds.
+The page lives in `page.h`, which must be in the same folder as the sketch for it to compile. The whole 
+page is stored in flash and does not rely on any CDN, so it keeps working when your home internet is 
+down (your local network still needs to be up).
+ 
+The page shows the current temperature of each connected probe and a live graph that can display the last 
+30 minutes, 2 hours, 6 hours or 24 hours. The Y axis adjusts to the highest and lowest readings in the 
+selected range. The page polls the Pico for live temperatures every 3 seconds and refreshes the history 
+every 30 seconds. Live samples are taken from the probes every 2 seconds so the page should always show
+the most up-to-date temperature.
+ 
+If the Pico can't be reached (lost Wifi for example) but is still running, the page shows a warning but 
+the Pico will continue to record temperatures in the history. When the connection returns, the page 
+fetches the saved history again and fills in the graph. Temperatures when the Pico was powered off or 
+restarting are not recorded and will appear as a gap in the graph. 
+
 
 ### Temperature history
 
-Temperature readings are made every 15 seconds and stored in RAM on the Pico, up to 24 hours. Readings are initially timestamped with seconds since the Pico booted, but once 
-the clock is set from the internet it will convert those elapsed times to actual times. Once the time is set, the system will write the temperature history to the file
-system (Flash memory) every 2 minutes so it will survive a restart of the Pico if, for example, the battery dies. 
+Temperatures are read every 15 seconds and kept in RAM on the Pico for up to 24 hours. Readings are initially 
+timestamped with seconds since boot. Once the clock is set from the internet, those elapsed times are 
+converted to real times.
+ 
+After the clock is set, the history is written to the flash filesystem every 2 minutes, so it survives a 
+restart of the Pico, for example if the battery dies. That equates to 720 writes per day. The Pico 2W is
+rated for 100,000 write cycles, so that only equates to about 139 days of running this project if you're
+running 24 hours a day. A typical BBQ cook should be less than 8 hour bringing that number up to about
+415 sessions however that's still not a long time and this should be considered something less than a 
+permanent solution. That being said, at ~$15 for a Pico 2W you could easily replace it when it wears out.
+
+### API
+
+Available end points are:
+- "/" = returns the ``page.h`` which displays the current probe temperatures and history graph.
+- "/api/current" = returns a JSON string with the current probe readings.
+- "/api/history" = returns a JSON string representing the temperature history for the time range 
+specified by passing in a ``window=<seconds>`` variable.
 
 ---------------------------------------
 ## 3. Notes and Limitations
 
-In the end, the resulting graph might look something like this: 
-
-* History from before a restart only comes back if it was saved, which needs the flash filesystem and a set clock (the Pico needs internet access for NTP).
-* New history is saved every 2 minutes, so turning the power off can lose the last couple of minutes.
-* History is capped at 24 hours.
-* The web page has no password. Keep it on your home network; for remote access, use a VPN to your router rather than exposing the Pico to the internet.
+- History survives a restart only if the flash filesystem is available and the clock was set. Setting the 
+clock requires internet access for NTP.
+- History is saved every 2 minutes, so cutting the power can lose the last couple of minutes.
+- History is capped at 24 hours.
+- Temperatures are shown in degrees Fahrenheit only.
+- The web page has no password. Keep it on your home network; for remote access, use a VPN to your 
+router rather than exposing the Pico to the internet.
 
 
 ---------------------------------------
 ## 4. Price Breakdown
-I had a lot of this stuff lying around but here's what it would cost if you were to buy it all from Aliexpress. I did not include the case since I 
-printed that myself.
+I had a lot of this lying around but here's what it would cost if you were to buy everything from 
+Aliexpress. I did not include the case since I plan to design and print it myself. I also did not
+include the probes, but you can get a 4-pack of Chinese knock-offs on Amazon for about $15.
 
 
-| Item             | # Required |Unit Price (USD)  |Total  |
-|------------------|------------|------------------|-------|
-| RPi Pico 2W      | 1          | 20.09            | 20.09 |      
-| Switch           | 1          | 0.06             | 0.06  |
-| SH1106 display   | 1          | 1.09             | 1.09  |
-| LX-LCBST         | 1          | 3.33             | 3.33  |
-| Perf Board       | 1          | 0.00 *           | 0.00  |
-| Diode            | 1          | 0.01             | 0.01  |
-| ADS1115          | 1          | 1.09             | 1.09  |
-| 10K Resistor     | 4          | 1.09             | 1.09  |
-| LiPo battery     | 1          | 5.96             | 5.96  |
-* free with any purchase
+| Item                 | # Required |Unit Price (USD)    |Total  |
+|----------------------|------------|--------------------|-------|
+| RPi Pico 2W          | 1          | 20.09              | 20.09 |      
+| Switch               | 1          | 2.04               | 2.04  |
+| SH1106 display       | 1          | 2.62               | 2.62  |
+| LX-LCBST             | 1          | 3.33               | 3.33  |
+| Perf Board           | Assort.    | 1.79  (1 pkg)      | 1.79  |
+| 1N1001 Diode         | 1          | 0.01               | 0.01  |
+| ADS1115              | 1          | 1.57               | 1.57  |
+| 10K Resistor         | 4          | 0.01               | 0.04  |
+| LiPo battery         | 1          | 5.96               | 5.96  |
+| 2.5 mm TS connectors | 4          | 1.19               | 1.19  |
+| Hook up wire         | Various    | 8.12 (1 pkg asst)  | 8.12  |
+| Female headers       | 1 pack     | 4.68               | 4.68  |
 
-Total Price: $32.72
+Total Price: $51.44
 
 
 --------------------------------------
-# 4. Possible Further Development
+## 5. Possible Further Development
 
-A. Dynamic Wifi settings
-Have the Wifi SSID and Password setable dynamically via the phone so it doesn't have to be hard coded.
+**A. Dynamic Wifi settings.** Let the Wifi SSID and Password be set dynamically via a phone so it doesn't 
+have to be hard coded.
 
-B. Battery Indicator
-As with the original, this has no way to judge the remaining battery. It would be nice to have something indicating at least what the battery voltage currently is, even
-though it's not a good representation of state of charge for LiPo.
+**B. Battery Indicator.** There is currently no way to judge the remaining battery. Showing the battery
+voltage would help. Though it is only a rough guide to charge, since the LiPo discharge curve is flat 
+through the middle of its range.
 
-C. Temperature targets
-It might be nice to have user selectable target temperatures for each probe along with an alarm or notification that it's been reached.
+**C. Temperature targets.** Selectable target temperatures for each probe, with an alarm or notification 
+when one is reached.
