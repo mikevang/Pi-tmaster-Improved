@@ -34,8 +34,8 @@
 
 
 // --------------- Settings---------------
-#define NETWORK_SSID "REPLACE_ME"
-#define NETWORK_PW "REPLACE_ME"
+#define NETWORK_SSID "CHANGE ME"
+#define NETWORK_PW "CHANGE ME"
 #define WIFI_PORT 80
 #define NUM_PROBES 4
 #define OLED_LINE_HEIGHT 14
@@ -105,7 +105,8 @@ unsigned long lastFlush = 0;
 unsigned long lastWifiRetry = 0;
 
 // A place to store the pico's IP address for display
-String my_ip_address;
+String my_ip_address = "no Wifi";
+bool networkStarted = false;    // true once Wifi is up and web server is running
 
 
 // --------------- Probes ---------------
@@ -470,6 +471,22 @@ void handleNotFound() {
 
 // --------------- Setup / loop ---------------
 
+// Everything that needs WiFi. Runs once, the first time WiFi is connected - at startup if
+// the network is there, or later in the loop() if it was not.
+void startNetwork() {
+  my_ip_address = WiFi.localIP().toString();
+  Serial.printf("\nConnected to Wifi\n\nIP: %s:%d\n", my_ip_address.c_str(), WIFI_PORT);
+
+  NTP.begin("pool.ntp.org","time.nist.gov"); // sets the clock in the background
+
+  server.on("/", handleRoot);
+  server.on("/api/current", handleCurrent);
+  server.on("api/history", handleHistory);
+  server.onNotFound(handleNotFound);
+  server.begin();
+  networkStarted = true;
+}
+
 void setup() {
   // pause half a second so everything can get started up
   delay(500);
@@ -510,23 +527,17 @@ void setup() {
   showMessage("Connecting WiFi...");
   WiFi.begin(NETWORK_SSID, NETWORK_PW);
   Serial.printf("Attempting to connect to '%s' with password", NETWORK_SSID);
-  while (WiFi.status() != WL_CONNECTED) {
+  
+  //Wait up to 20 s for WiFi, then carry on
+  unsigned long wifiWaitStart = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiWaitStart < 20000) {
     Serial.print(".");
     delay(500);
   }
-  
-  my_ip_address = WiFi.localIP().toString();
-  Serial.printf("\nConnected to Wifi\n\nIP: %s:%d", my_ip_address.c_str(), WIFI_PORT);
-
-  NTP.begin("pool.ntp.org", "time.nist.gov");   // sets the clock in the background
-  showMessage("Setting clock...");
-  NTP.waitSet(10000);   // wait up to 10 s for the internet clock
-
-  server.on("/", handleRoot);
-  server.on("/api/current", handleCurrent);
-  server.on("/api/history", handleHistory);
-  server.onNotFound(handleNotFound);
-  server.begin();
+    
+  if (WiFi.status() == WL_CONNECTED) {
+    startNetwork();
+  }
 
   readAllProbes();
   updateOled();
@@ -534,11 +545,14 @@ void setup() {
 
 
 void loop() {
-  server.handleClient();
+  if (networkStarted) {
+    server.handleClient();
+  }
 
   unsigned long now = millis();
   if (now - lastRead >= READ_INTERVAL_MS) {
     lastRead = now;
+    my_ip_address = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString() : String("no Wifi");
     readAllProbes();
     updateOled();
     rebaseHistoryIfClockJustSet();
@@ -550,8 +564,13 @@ void loop() {
     histFlush();
   }
 
-  // Reconnect if Wifi dros (retry at most every 10 seconds)
-  if (WiFi.status() != WL_CONNECTED && now - lastWifiRetry > 10000) {
+  // Reconnect if WiFi drops or never came up (retry at most every 10 seconds). The first time
+  // it is connected, start the web server and the clock
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!networkStarted) {
+      startNetwork();
+    }
+  } else if (now - lastWifiRetry > 10000) {
     lastWifiRetry = now;
     WiFi.begin(NETWORK_SSID, NETWORK_PW);
   }
