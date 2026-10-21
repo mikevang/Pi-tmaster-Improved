@@ -100,8 +100,8 @@ External libraries required:
 
 These come with the board core: `WiFi`, `WebServer` and `LittleFS`.
 
-Before compiling, set your WiFi SSID and password in `NETWORK_SSID` and `NETWORK_PW` defines in the code.
-Do NOT commit your credentials if you fork this repository.
+Before compiling, rename `secret.h.example` to `secret.h` and set your WiFi SSID and password in `NETWORK_SSID` and `NETWORK_PW`. 
+This file should NEVER be commited if you fork this repository.
 
 ### Startup
 
