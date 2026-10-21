@@ -13,7 +13,7 @@
 //    Flash Size:   Choose an option WITH a filesystem, e.g. "2MB (Sketch 1MB, FS 1MB)"
 //                    (Tools -> Flash Size). Without it the history won't be saved.
 //    Libraries:    "Adafruit ADS1X15" and "GyverOLED"
-//    Files:        Keep page.h in the same directory as this sketch
+//    Files:        Keep page.h and secret.h in the same directory as this sketch
 //
 //    Wiring:       I2C0 SDA = GP4, SCL = GP5 (ADS1115 at 0x48 and OLED at 0x3C share the bus)
 //                  Each probe: 3V3 (Pin 5) -> 10K resistor -> Midpoint -> probe -> GND,
@@ -31,11 +31,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "page.h"
+#include "secret.h"
 
 
 // --------------- Settings---------------
-#define NETWORK_SSID "CHANGE_ME"
-#define NETWORK_PW "CHANGE_ME"
 #define WIFI_PORT 80
 #define NUM_PROBES 4
 #define OLED_LINE_HEIGHT 14
