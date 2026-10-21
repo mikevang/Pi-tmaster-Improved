@@ -5,7 +5,7 @@
 //    - connects to a WiFi network
 //    - show the devices local IP address and probe temperatures on the OLED
 //    - serves a web page (mobile friendly) with live temps and a history graph
-//    - records temperature history from power-on (up to 24 hours) once the internet clock is set
+//    - records temperature history from power-on (up to 24 hours)
 //    - save temperature history to flash so it survives a reboot
 //
 // Arduino IDE setup:
@@ -34,13 +34,13 @@
 
 
 // --------------- Settings---------------
-#define NETWORK_SSID "CHANGE ME"
-#define NETWORK_PW "CHANGE ME"
+#define NETWORK_SSID "CHANGE_ME"
+#define NETWORK_PW "CHANGE_ME"
 #define WIFI_PORT 80
 #define NUM_PROBES 4
 #define OLED_LINE_HEIGHT 14
 
-// Shared SPI clock and data lines for the OLED and ADS
+// Shared I2C clock and data lines for the OLED and ADS
 const int COMMON_SDA_PIN = 4; //gpio 4
 const int COMMON_SCL_PIN = 5; //gpio 5
 
@@ -93,7 +93,7 @@ struct Sample {
 };
 
 Sample   hist[HIST_CAP];
-uint16_t histCount = 0;           // samples currently held (max of HIST_COUNT)
+uint16_t histCount = 0;           // samples currently held (max of HIST_CAP)
 uint16_t histHead = 0;            // next write position in the ring
 uint16_t pendingFlush = 0;        // samples not yet saved to flash
 uint32_t fileRecords = 0;         // records currently in the flash file
@@ -174,7 +174,7 @@ void showMessage(const String &line1, const String &line2 = "") {
 
 void updateOled() {
   oled.clear();
-  String message = "My IP: " + my_ip_address;
+  String message = "IP:" + my_ip_address;
   oled.setCursorXY(0, 0);
   oled.print(message);
   for (int i = 0; i < NUM_PROBES; i++) {
@@ -287,6 +287,10 @@ void histFlush() {
     return;   // wait for a real timestamp
   }
 
+  // The clock may have been set since the last reading tick; make sure every waiting
+  // sample has a real timestamp before anything is written to flash
+  rebaseHistoryIfClockJustSet();
+
   if (fileRecords + pendingFlush > 2UL * HIST_CAP) {
     histCompact();
     return;
@@ -364,7 +368,7 @@ void handleRoot() {
 
 void handleCurrent() {
   String s;
-  s.reserve(160);
+  s.reserve(220);
   s += "{\"up\":";
   s += (unsigned long)millis();
   s += ",\"t\":";
@@ -372,6 +376,12 @@ void handleCurrent() {
   s += ",\"synced\":";
   
   s += clockSynced() ? "true" : "false";
+  s += ",\"fs\":";
+  s += fsOk ? "true" : "false";
+  s += ",\"saved\":";
+  s += (unsigned long)fileRecords;
+  s += ",\"ring\":";
+  s += (unsigned long)histCount;
   s += ",\"p\":[";
   for (int i = 0; i < NUM_PROBES; i++) {
     if (i) {
@@ -481,7 +491,7 @@ void startNetwork() {
 
   server.on("/", handleRoot);
   server.on("/api/current", handleCurrent);
-  server.on("api/history", handleHistory);
+  server.on("/api/history", handleHistory);
   server.onNotFound(handleNotFound);
   server.begin();
   networkStarted = true;
@@ -493,16 +503,17 @@ void setup() {
 
   Serial.begin(115200);
 
+  // set up the I2C bus first, so the pins are chosen before anything starts it
+  Wire.setSDA(COMMON_SDA_PIN);
+  Wire.setSCL(COMMON_SCL_PIN);
+  Wire.begin();
+
   // initialize and clear the display
   oled.init();
   oled.setScale(1);
   oled.setContrast(128);
   oled.clear();
   oled.update();
-
-  Wire.setSDA(COMMON_SDA_PIN);
-  Wire.setSCL(COMMON_SCL_PIN);
-  Wire.begin();
 
   if (!ads.begin(0x48, &Wire)) {
     showMessage("ADS1115 not found", "check wiring");
@@ -526,7 +537,7 @@ void setup() {
 
   showMessage("Connecting WiFi...");
   WiFi.begin(NETWORK_SSID, NETWORK_PW);
-  Serial.printf("Attempting to connect to '%s' with password", NETWORK_SSID);
+  Serial.printf("Attempting to connect to '%s'", NETWORK_SSID);
   
   //Wait up to 20 s for WiFi, then carry on
   unsigned long wifiWaitStart = millis();
